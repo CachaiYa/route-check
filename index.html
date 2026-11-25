@@ -48,9 +48,9 @@
 <div id="out"></div>
 <div id="cams">
 <h2>Cameras (HOV lane check)</h2>
-<figure class="cam"><figcaption>Hwy 1 at 176 St, looking west</figcaption><img id="cam904" alt="Hwy 1 at 176 St looking west" data-id="904"></figure>
-<figure class="cam"><figcaption>Hwy 1 at 176 St, looking south (Hwy 15 approach)</figcaption><img id="cam906" alt="Hwy 1 at 176 St looking south" data-id="906"></figure>
-<figure class="cam"><figcaption>Port Mann Bridge, looking west</figcaption><img id="cam292" alt="Port Mann Bridge looking west" data-id="292"></figure>
+<figure class="cam"><figcaption>Hwy 1 at 176 St, looking west</figcaption><img id="cam904" alt="Hwy 1 at 176 St looking west" data-id="904"><a class="small" href="https://images.drivebc.ca/bchighwaycam/pub/html/www/904.html" target="_blank" rel="noopener">Open camera page</a></figure>
+<figure class="cam"><figcaption>Hwy 1 at 176 St, looking south (Hwy 15 approach)</figcaption><img id="cam906" alt="Hwy 1 at 176 St looking south" data-id="906"><a class="small" href="https://images.drivebc.ca/bchighwaycam/pub/html/www/906.html" target="_blank" rel="noopener">Open camera page</a></figure>
+<figure class="cam"><figcaption>Port Mann Bridge, looking west</figcaption><img id="cam292" alt="Port Mann Bridge looking west" data-id="292"><a class="small" href="https://images.drivebc.ca/bchighwaycam/pub/html/www/292.html" target="_blank" rel="noopener">Open camera page</a></figure>
 <p class="small" id="camnote">Images come from DriveBC and update about every 2 to 15 minutes. Check the time stamp on each picture. If one is blank, <a href="https://images.drivebc.ca/bchighwaycam/pub/html/www/index-LowerMainland.html" target="_blank" rel="noopener">open the DriveBC camera list</a>.</p>
 </div>
 <div id="alts"></div>
@@ -478,15 +478,22 @@ if (typeof document !== "undefined") {
   }
 
 
-  function loadCams() {
-    var t = Date.now();
-    ["904", "906", "292"].forEach(function (id) {
-      var img = $("cam" + id);
-      if (!img) return;
-      img.onerror = function () { img.alt = "Camera image did not load. Use the DriveBC camera list below."; };
-      img.src = "https://images.drivebc.ca/bchighwaycam/pub/cameras/" + id + ".jpg?t=" + t;
-    });
+  var CAM_HOSTS = ["https://cache.drivebc.ca", "https://images.drivebc.ca", "https://prd-images.drivebc.ca"];
+  function loadCam(id, hostIdx, bust) {
+    var img = $("cam" + id);
+    if (!img) return;
+    if (hostIdx >= CAM_HOSTS.length) {
+      img.alt = "Camera image did not load. Tap Open camera page.";
+      return;
+    }
+    img.onerror = function () {
+      // Retry the same host without the cache-buster once, then move to the next host.
+      if (bust) loadCam(id, hostIdx, false); else loadCam(id, hostIdx + 1, true);
+    };
+    img.referrerPolicy = "no-referrer";
+    img.src = CAM_HOSTS[hostIdx] + "/bchighwaycam/pub/cameras/" + id + ".jpg" + (bust ? "?t=" + Date.now() : "");
   }
+  function loadCams() { ["904", "906", "292"].forEach(function (id) { loadCam(id, 0, true); }); }
   loadCams();
   $("go").addEventListener("click", run);
   $("again").addEventListener("click", function () { if (lastSpeech.length) speak(lastSpeech); });
