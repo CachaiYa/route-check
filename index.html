@@ -25,6 +25,12 @@
   .tag { display: inline-block; font-size: .85rem; font-weight: 700; padding: 2px 8px; border-radius: 8px; margin-left: 6px; }
   .small { color: #9fb3c8; font-size: .9rem; margin: 10px 0; line-height: 1.4; }
   a { color: #4cc2ff; }
+  details { margin: 12px 0; }
+  summary { font-size: 1.05rem; padding: 10px 0; color: #4cc2ff; }
+  .dg { background: #151c25; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: .9rem; line-height: 1.35; word-break: break-word; }
+  .dg.used { border-left: 4px solid #4cc2ff; }
+  .dg.inactive { border-left: 4px solid #854d0e; }
+  .dg.out { border-left: 4px solid #3b4654; opacity: .85; }
 </style>
 </head>
 <body>
@@ -38,6 +44,7 @@
 <div id="out"></div>
 <div id="alts"></div>
 <p class="small" id="meta"></p>
+<details id="diag"><summary>Diagnostics: every DriveBC event in the area</summary><div id="diagBody"></div></details>
 <p class="small">This covers incidents and construction that DriveBC has reported. It does not measure general slowdowns or travel times, so it cannot say which route is faster. Look at the highway cameras if traffic seems slow and nothing is listed. The Fraser Heights and 96 Ave options share Highway 1 west of 160 St with your main route.
 <br><a href="https://drivebc.ca/" target="_blank" rel="noopener">Open DriveBC (map and cameras)</a></p>
 
@@ -268,8 +275,48 @@ function altSpeech(alts) {
   return out;
 }
 
+
+// ---------- Diagnostics: why each DriveBC event was or was not used ----------
+function whyNot(ev) {
+  var roads = ev.roads || [];
+  var coords = flatCoords(ev.geography);
+  var lons = coords.map(function (c) { return c[0]; });
+  var lats = coords.map(function (c) { return c[1]; });
+  function anyIn(arr, lo, hi) { return arr.length === 0 || arr.some(function (v) { return v >= lo && v <= hi; }); }
+  var text = ((ev.headline || "") + " " + (ev.description || "")).toLowerCase();
+  var out = [];
+  roads.forEach(function (r) {
+    var name = String(r.name || "").toLowerCase();
+    var d = dirOf(r.direction);
+    if (!d) { var m = text.match(/\b(westbound|eastbound|northbound|southbound)\b/); if (m) d = dirOf(m[1]); }
+    ROUTES.forEach(function (route) {
+      route.rules.forEach(function (rule) {
+        if (!rule.re.test(name)) return;
+        if (rule.dirs && rule.dirs.indexOf(d) < 0) { out.push(route.name + ": direction '" + (d || "unknown") + "' not wanted"); return; }
+        if (rule.lon && !anyIn(lons, rule.lon[0], rule.lon[1])) { out.push(route.name + ": east/west position outside your stretch"); return; }
+        if (rule.lat && !anyIn(lats, rule.lat[0], rule.lat[1])) { out.push(route.name + ": north/south position outside your stretch"); return; }
+      });
+    });
+  });
+  if (!out.length) out.push("road name not on any of your routes");
+  var seen = {};
+  return out.filter(function (x) { if (seen[x]) return false; seen[x] = 1; return true; });
+}
+
+function diagnose(events, now) {
+  var rows = (events || []).map(function (ev) {
+    var onRoutes = [];
+    ROUTES.forEach(function (rt) { if (routeRole(ev, rt)) onRoutes.push(rt.id); });
+    var inactive = onRoutes.length > 0 && !activeNow(ev, now);
+    return { ev: ev, onRoutes: onRoutes, inactive: inactive, why: onRoutes.length ? [] : whyNot(ev) };
+  });
+  function rank(r) { return r.onRoutes.length && !r.inactive ? 0 : (r.inactive ? 1 : 2); }
+  rows.sort(function (a, b) { return rank(a) - rank(b); });
+  return rows;
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { ROUTES: ROUTES, routeRole: routeRole, classify: classify, activeNow: activeNow, analyze: analyze, analyzeAll: analyzeAll, speechFor: speechFor, altSpeech: altSpeech };
+  module.exports = { ROUTES: ROUTES, routeRole: routeRole, classify: classify, activeNow: activeNow, analyze: analyze, analyzeAll: analyzeAll, speechFor: speechFor, altSpeech: altSpeech, diagnose: diagnose, whyNot: whyNot };
 }
 
 // ---------- Browser wiring ----------
@@ -351,6 +398,41 @@ if (typeof document !== "undefined") {
       (skipped ? skipped + " scheduled item(s) not active right now were left out of the main route." : "");
   }
 
+
+  function renderDiag(events, now) {
+    var rows = diagnose(events, now);
+    var body = $("diagBody");
+    body.innerHTML = "";
+    var head = document.createElement("div");
+    head.className = "small";
+    var used = rows.filter(function (r) { return r.onRoutes.length && !r.inactive; }).length;
+    var inact = rows.filter(function (r) { return r.inactive; }).length;
+    head.textContent = rows.length + " events fetched. " + used + " used, " + inact + " on your routes but scheduled for another time, " + (rows.length - used - inact) + " not on your routes.";
+    body.appendChild(head);
+    rows.forEach(function (r) {
+      var ev = r.ev, rd = (ev.roads || [])[0] || {};
+      var c = flatCoords(ev.geography)[0];
+      var d = document.createElement("div");
+      d.className = "dg " + (r.inactive ? "inactive" : (r.onRoutes.length ? "used" : "out"));
+      var status = r.inactive ? "SCHEDULED, NOT ACTIVE NOW (" + r.onRoutes.join(", ") + ")" :
+        (r.onRoutes.length ? "USED (" + r.onRoutes.join(", ") + ")" : "NOT USED: " + r.why.join("; "));
+      var lines = [
+        status,
+        (rd.name || "unnamed road") + " | direction: " + (rd.direction || "none") + " | " + (ev.event_type || "") + " | " + (ev.severity || ""),
+        clean(ev.headline) + (ev.description ? " " + clean(ev.description) : ""),
+        c ? "position: " + c[1].toFixed(3) + ", " + c[0].toFixed(3) : "no position",
+      ];
+      if (r.inactive && ev.schedule) lines.push("schedule: " + JSON.stringify(ev.schedule).slice(0, 240));
+      lines.forEach(function (t, i) {
+        var l = document.createElement("div");
+        if (i === 0) l.style.fontWeight = "700";
+        l.textContent = t;
+        d.appendChild(l);
+      });
+      body.appendChild(d);
+    });
+  }
+
   function run() {
     var now = Date.now();
     $("go").textContent = "Checking...";
@@ -362,6 +444,7 @@ if (typeof document !== "undefined") {
         clearTimeout(timer);
         var all = analyzeAll(data.events || [], now);
         render(all, now);
+        renderDiag(data.events || [], now);
         speak(speechFor(all.main, now).concat(altSpeech(all.alts)));
       })
       .catch(function (e) {
@@ -371,6 +454,7 @@ if (typeof document !== "undefined") {
         $("verdict").textContent = "NO DATA";
         $("out").innerHTML = "";
         $("alts").innerHTML = "";
+        $("diagBody").innerHTML = "";
         $("meta").textContent = "Error: " + e.message;
         speak(["Could not reach DriveBC from this page. Do not rely on this check. Open DriveBC directly."]);
       })
