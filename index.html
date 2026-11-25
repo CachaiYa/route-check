@@ -25,6 +25,7 @@
   .tag { display: inline-block; font-size: .85rem; font-weight: 700; padding: 2px 8px; border-radius: 8px; margin-left: 6px; }
   .small { color: #9fb3c8; font-size: .9rem; margin: 10px 0; line-height: 1.4; }
   a { color: #4cc2ff; }
+  a.gm { display: block; text-align: center; text-decoration: none; background: #2a3441; color: #f2f5f8; font-size: 1.2rem; font-weight: 700; padding: 18px 12px; border-radius: 14px; margin-bottom: 10px; }
   details { margin: 12px 0; }
   summary { font-size: 1.05rem; padding: 10px 0; color: #4cc2ff; }
   .dg { background: #151c25; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: .9rem; line-height: 1.35; word-break: break-word; }
@@ -43,6 +44,10 @@
 <div id="verdict"></div>
 <div id="out"></div>
 <div id="alts"></div>
+<h2>Compare in Google Maps</h2>
+<a class="gm" href="https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=Clayton%20Community%20Centre%2C%20Surrey%2C%20BC&destination=Royal%20Columbian%20Hospital%2C%20New%20Westminster%2C%20BC&waypoints=Port%20Mann%20Bridge%2C%20BC" target="_blank" rel="noopener">Highway 1 over the Port Mann</a>
+<a class="gm" href="https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=Clayton%20Community%20Centre%2C%20Surrey%2C%20BC&destination=Royal%20Columbian%20Hospital%2C%20New%20Westminster%2C%20BC&waypoints=Pattullo%20Bridge%2C%20Surrey%2C%20BC" target="_blank" rel="noopener">Highway 17 to the Riverview Bridge</a>
+<p class="small">Both start at Clayton Community Centre and end at Royal Columbian Hospital. Check the "via" text on Google's route. If it shows a different road than the label, tell me. Google's times cannot account for the HOV lane, so Highway 1 will look slower there than it is for you.</p>
 <p class="small" id="meta"></p>
 <details id="diag"><summary>Diagnostics: every DriveBC event in the area</summary><div id="diagBody"></div></details>
 <p class="small">This covers incidents and construction that DriveBC has reported. It does not measure general slowdowns or travel times, so it cannot say which route is faster. Look at the highway cameras if traffic seems slow and nothing is listed. The Fraser Heights and 96 Ave options share Highway 1 west of 160 St with your main route.
