@@ -26,6 +26,9 @@
   .small { color: #9fb3c8; font-size: .9rem; margin: 10px 0; line-height: 1.4; }
   a { color: #4cc2ff; }
   a.gm { display: block; text-align: center; text-decoration: none; background: #2a3441; color: #f2f5f8; font-size: 1.2rem; font-weight: 700; padding: 18px 12px; border-radius: 14px; margin-bottom: 10px; }
+  .cam { margin: 0 0 12px; }
+  .cam figcaption { font-size: .95rem; color: #9fb3c8; margin-bottom: 4px; }
+  .cam img { width: 100%; border-radius: 10px; background: #151c25; min-height: 120px; display: block; }
   details { margin: 12px 0; }
   summary { font-size: 1.05rem; padding: 10px 0; color: #4cc2ff; }
   .dg { background: #151c25; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: .9rem; line-height: 1.35; word-break: break-word; }
@@ -43,6 +46,13 @@
 </div>
 <div id="verdict"></div>
 <div id="out"></div>
+<div id="cams">
+<h2>Cameras (HOV lane check)</h2>
+<figure class="cam"><figcaption>Hwy 1 at 176 St, looking west</figcaption><img id="cam904" alt="Hwy 1 at 176 St looking west" data-id="904"></figure>
+<figure class="cam"><figcaption>Hwy 1 at 176 St, looking south (Hwy 15 approach)</figcaption><img id="cam906" alt="Hwy 1 at 176 St looking south" data-id="906"></figure>
+<figure class="cam"><figcaption>Port Mann Bridge, looking west</figcaption><img id="cam292" alt="Port Mann Bridge looking west" data-id="292"></figure>
+<p class="small" id="camnote">Images come from DriveBC and update about every 2 to 15 minutes. Check the time stamp on each picture. If one is blank, <a href="https://images.drivebc.ca/bchighwaycam/pub/html/www/index-LowerMainland.html" target="_blank" rel="noopener">open the DriveBC camera list</a>.</p>
+</div>
 <div id="alts"></div>
 <h2>Compare in Google Maps</h2>
 <a class="gm" href="https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=Clayton%20Community%20Centre%2C%20Surrey%2C%20BC&destination=Royal%20Columbian%20Hospital%2C%20New%20Westminster%2C%20BC&waypoints=Port%20Mann%20Bridge%2C%20BC" target="_blank" rel="noopener">Highway 1 over the Port Mann</a>
@@ -440,6 +450,7 @@ if (typeof document !== "undefined") {
 
   function run() {
     var now = Date.now();
+    loadCams();
     $("go").textContent = "Checking...";
     var ctl = new AbortController();
     var timer = setTimeout(function () { ctl.abort(); }, 12000);
@@ -466,6 +477,17 @@ if (typeof document !== "undefined") {
       .then(function () { $("go").textContent = "Check my route"; });
   }
 
+
+  function loadCams() {
+    var t = Date.now();
+    ["904", "906", "292"].forEach(function (id) {
+      var img = $("cam" + id);
+      if (!img) return;
+      img.onerror = function () { img.alt = "Camera image did not load. Use the DriveBC camera list below."; };
+      img.src = "https://images.drivebc.ca/bchighwaycam/pub/cameras/" + id + ".jpg?t=" + t;
+    });
+  }
+  loadCams();
   $("go").addEventListener("click", run);
   $("again").addEventListener("click", function () { if (lastSpeech.length) speak(lastSpeech); });
   $("stop").addEventListener("click", function () { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); });
