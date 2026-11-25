@@ -49,7 +49,7 @@
 <div id="cams">
 <h2>Cameras (HOV lane check)</h2>
 <div id="camGrid"><p class="small">Loading cameras...</p></div>
-<p class="small">Images come from DriveBC and update every few minutes. Check the time stamp on each picture. <a href="https://drivebc.ca/" target="_blank" rel="noopener">Open DriveBC for all cameras</a></p>
+<p class="small">Images come from DriveBC and update every few minutes. Check the time stamp on each picture. <a href="https://www.drivebc.ca/cameras?start=Cloverdale+in+Surrey%2C+BC&amp;end=Sapperton+in+New+Westminster%2C+BC" target="_blank" rel="noopener">Open DriveBC cameras along your route</a></p>
 </div>
 <div id="alts"></div>
 <h2>Compare in Google Maps</h2>
@@ -507,7 +507,7 @@ if (typeof document !== "undefined") {
         var mann = recs.filter(function (r) { return /port mann/.test(camText(r)); }).sort(westFirst);
         grid.innerHTML = "";
         var shown = at176.slice(0, 4).concat(mann.slice(0, 2));
-        if (!shown.length) { grid.innerHTML = '<p class="small">DriveBC sent its camera list, but no Highway 1 cameras at 176 St or the Port Mann matched. Open DriveBC for cameras.</p>'; return; }
+        if (!shown.length) { grid.innerHTML = '<p class="small">DriveBC sent its camera list, but no Highway 1 cameras at 176 St or the Port Mann matched. Use the DriveBC cameras link below.</p>'; return; }
         shown.forEach(function (r) { addCam(grid, r); });
       })
       .catch(function (e) {
