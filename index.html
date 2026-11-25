@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Route check: Hwy 15 to Hwy 1 to Brunette</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: #0b0f14; color: #f2f5f8; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  h1 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 600; color: #9fb3c8; }
+  h2 { font-size: 1.15rem; margin: 18px 0 8px; color: #9fb3c8; }
+  button { width: 100%; border: 0; border-radius: 14px; font-size: 1.5rem; font-weight: 700; padding: 28px 12px; margin-bottom: 12px; color: #0b0f14; background: #4cc2ff; }
+  button.secondary { font-size: 1.1rem; padding: 16px 12px; background: #2a3441; color: #f2f5f8; width: 49%; display: inline-block; }
+  button:active { opacity: .8; }
+  .row { display: flex; gap: 2%; }
+  #verdict { font-size: 1.8rem; font-weight: 800; padding: 18px 14px; border-radius: 14px; margin: 8px 0 12px; display: none; }
+  .v-clear { background: #14532d; }
+  .v-likely { background: #166534; }
+  .v-unknown { background: #854d0e; }
+  .v-affected { background: #9a3412; }
+  .v-blocked { background: #991b1b; }
+  .ev { background: #151c25; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; font-size: 1.05rem; line-height: 1.35; }
+  .ev b { color: #4cc2ff; }
+  .tag { display: inline-block; font-size: .85rem; font-weight: 700; padding: 2px 8px; border-radius: 8px; margin-left: 6px; }
+  .small { color: #9fb3c8; font-size: .9rem; margin: 10px 0; line-height: 1.4; }
+  a { color: #4cc2ff; }
+</style>
+</head>
+<body>
+<h1>Cloverdale: Hwy 15 north, Hwy 1 west over the Port Mann, Brunette exit</h1>
+<button id="go">Check my route</button>
+<div class="row">
+  <button class="secondary" id="again">Repeat</button>
+  <button class="secondary" id="stop">Stop</button>
+</div>
+<div id="verdict"></div>
+<div id="out"></div>
+<div id="alts"></div>
+<p class="small" id="meta"></p>
+<p class="small">This covers incidents and construction that DriveBC has reported. It does not measure general slowdowns or travel times, so it cannot say which route is faster. Look at the highway cameras if traffic seems slow and nothing is listed. The Fraser Heights and 96 Ave options share Highway 1 west of 160 St with your main route.
+<br><a href="https://drivebc.ca/" target="_blank" rel="noopener">Open DriveBC (map and cameras)</a></p>
+
+<script>
+"use strict";
+
+// Fixed UTC-7 offset (B.C. no longer changes clocks).
+var OFFSET_MS = -7 * 3600 * 1000;
+var API = "https://api.open511.gov.bc.ca/events?format=json&status=ACTIVE&limit=500&bbox=-122.95,49.04,-122.60,49.24";
+var RANK = { CLEAR: 0, LIKELY_CLEAR: 1, UNKNOWN: 2, AFFECTED: 3, BLOCKED: 4 };
+var LABEL = { CLEAR: "CLEAR", LIKELY_CLEAR: "HOV LIKELY CLEAR", UNKNOWN: "UNKNOWN FOR HOV", AFFECTED: "HOV AFFECTED", BLOCKED: "BLOCKED" };
+var ALT_LABEL = { CLEAR: "nothing listed", LIKELY_CLEAR: "minor reports", UNKNOWN: "reports, lanes not stated", AFFECTED: "lane closures", BLOCKED: "blocked" };
+var CLASS = { CLEAR: "v-clear", LIKELY_CLEAR: "v-likely", UNKNOWN: "v-unknown", AFFECTED: "v-affected", BLOCKED: "v-blocked" };
+
+var HWY1 = /(^|\W)(highway|hwy)\s*1(\W|$)|trans.?canada|port mann/;
+var HWY17 = /(^|\W)(highway|hwy)\s*17(\W|$)|south fraser perimeter/;
+var BRUNETTE = { re: /brunette/, role: "brunette" };
+
+// Each route is a list of rules. A rule matches a road name and can limit direction, longitude and latitude.
+var ROUTES = [
+  { id: "main", name: "Your main route", speakName: "Main route", rules: [
+    { re: HWY1, role: "hwy1", dirs: ["w", "both", ""], lon: [-122.92, -122.70] },
+    { re: /(^|\W)(highway|hwy)\s*15(\W|$)|176 st|pacific h/, role: "hwy15", dirs: ["n", "both", ""], lat: [49.09, 49.185] },
+    { re: HWY17, role: "hwy17", lon: [-122.78, -122.66], lat: [49.10, 49.19] },
+    BRUNETTE ] },
+  { id: "alt17", name: "Highway 17 to Riverview Bridge", speakName: "Highway 17 to Riverview Bridge", rules: [
+    { re: HWY17, role: "hwy17", dirs: ["w", "both", ""] },
+    { re: /king george/, role: "street", dirs: ["n", "both", ""], lat: [49.12, 49.24] },
+    { re: /riverview|pattullo|stal/, role: "bridge" },
+    { re: /mcbride|columbia st/, role: "street", lon: [-122.92, -122.86] },
+    BRUNETTE ] },
+  { id: "altfh", name: "Fraser Heights, 160 St to Highway 1", speakName: "Fraser Heights via 160 Street", rules: [
+    { re: /(^|\W)160\s*(st|th)|160th/, role: "street", lat: [49.15, 49.24] },
+    { re: HWY1, role: "hwy1", dirs: ["w", "both", ""], lon: [-122.92, -122.775] },
+    BRUNETTE ] },
+  { id: "alt96", name: "96 Ave to 160 St or 152 St, then Highway 1", speakName: "96 Avenue", rules: [
+    { re: /(^|\W)96\s*(ave|th)|96th/, role: "street" },
+    { re: /(^|\W)(160|152)\s*(st|th|nd)|160th|152nd/, role: "street", lat: [49.15, 49.24] },
+    { re: HWY1, role: "hwy1", dirs: ["w", "both", ""], lon: [-122.92, -122.795] },
+    BRUNETTE ] }
+];
+
+function flatCoords(g) {
+  var out = [];
+  (function walk(c) {
+    if (!Array.isArray(c)) return;
+    if (typeof c[0] === "number" && typeof c[1] === "number") { out.push(c); return; }
+    for (var i = 0; i < c.length; i++) walk(c[i]);
+  })(g && g.coordinates);
+  return out;
+}
+
+function dirOf(s) {
+  s = String(s || "").toLowerCase();
+  if (/both|all dir|either/.test(s)) return "both";
+  if (/west|^w$/.test(s)) return "w";
+  if (/east|^e$/.test(s)) return "e";
+  if (/north|^n$/.test(s)) return "n";
+  if (/south|^s$/.test(s)) return "s";
+  return "";
+}
+
+// Returns the role ("hwy1", "street", ...) if the event is on this route, else "".
+function routeRole(ev, route) {
+  route = route || ROUTES[0];
+  var roads = ev.roads || [];
+  var text = ((ev.headline || "") + " " + (ev.description || "")).toLowerCase();
+  var coords = flatCoords(ev.geography);
+  var lons = coords.map(function (c) { return c[0]; });
+  var lats = coords.map(function (c) { return c[1]; });
+  function anyIn(arr, lo, hi) { return arr.length === 0 || arr.some(function (v) { return v >= lo && v <= hi; }); }
+
+  for (var i = 0; i < roads.length; i++) {
+    var r = roads[i];
+    var name = String(r.name || "").toLowerCase();
+    var d = dirOf(r.direction);
+    if (!d) {
+      var m = text.match(/\b(westbound|eastbound|northbound|southbound)\b/);
+      if (m) d = dirOf(m[1]);
+    }
+    for (var k = 0; k < route.rules.length; k++) {
+      var rule = route.rules[k];
+      if (!rule.re.test(name)) continue;
+      if (rule.dirs && rule.dirs.indexOf(d) < 0) continue;
+      if (rule.lon && !anyIn(lons, rule.lon[0], rule.lon[1])) continue;
+      if (rule.lat && !anyIn(lats, rule.lat[0], rule.lat[1])) continue;
+      return rule.role;
+    }
+  }
+  return "";
+}
+
+function hhmm(s) { var p = String(s || "").split(":"); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); }
+
+// Is a scheduled item in effect now? Unplanned incidents always count.
+function activeNow(ev, now) {
+  if (String(ev.event_type || "").toUpperCase() === "INCIDENT") return true;
+  var s = ev.schedule;
+  if (!s) return true;
+  var had = false;
+  if (Array.isArray(s.intervals)) {
+    for (var i = 0; i < s.intervals.length; i++) {
+      had = true;
+      var parts = String(s.intervals[i]).split("/");
+      var t0 = Date.parse(parts[0]);
+      var t1 = parts[1] ? Date.parse(parts[1]) : NaN;
+      if (isNaN(t0)) return true;
+      if (now >= t0 && (isNaN(t1) || now <= t1)) return true;
+    }
+  }
+  var rs = s.recurring_schedules || s.recurring_schedule;
+  if (Array.isArray(rs)) {
+    var loc = new Date(now + OFFSET_MS);
+    var date = loc.toISOString().slice(0, 10);
+    var dow = loc.getUTCDay() || 7;
+    var mins = loc.getUTCHours() * 60 + loc.getUTCMinutes();
+    for (var j = 0; j < rs.length; j++) {
+      had = true;
+      var r = rs[j];
+      if (r.start_date && date < r.start_date) continue;
+      if (r.end_date && date > r.end_date) continue;
+      if (Array.isArray(r.days) && r.days.length && r.days.indexOf(dow) < 0 && r.days.indexOf(String(dow)) < 0) {
+        // Overnight windows can belong to the previous day; stay inclusive for those.
+        if (!(r.daily_start_time && r.daily_end_time && hhmm(r.daily_end_time) < hhmm(r.daily_start_time))) continue;
+      }
+      if (!r.daily_start_time || !r.daily_end_time) return true;
+      var a = hhmm(r.daily_start_time), b = hhmm(r.daily_end_time);
+      if (a <= b ? (mins >= a && mins <= b) : (mins >= a || mins <= b)) return true;
+    }
+  }
+  return !had;
+}
+
+function eventText(ev) {
+  return ((ev.headline || "") + " " + (ev.description || "") + " " + JSON.stringify(ev.roads || [])).toLowerCase();
+}
+
+// Deterministic rules. Highway 1 westbound: the HOV lane is the left lane.
+function classify(ev, role) {
+  var t = eventText(ev);
+  var roads = ev.roads || [];
+  for (var i = 0; i < roads.length; i++) {
+    if (String(roads[i].state || "").toUpperCase() === "CLOSED") return { v: "BLOCKED", why: "road marked closed" };
+  }
+  if (/all lanes[^.]{0,25}(closed|blocked)|(road|highway|bridge)\s+(is\s+)?(closed|blocked)|full(y)? clos|closed to (all )?traffic/.test(t)) {
+    return { v: "BLOCKED", why: "all lanes closed" };
+  }
+  if (/(\bhov\b|high.occupancy|carpool|diamond)[^.]{0,40}(closed|blocked|affected|obstruct)|(closed|blocked)[^.]{0,40}(\bhov\b|high.occupancy|carpool)/.test(t)) {
+    return { v: "AFFECTED", why: "HOV lane named" };
+  }
+  if (role === "brunette") return { v: "UNKNOWN", why: "report at your exit" };
+  var left = /(left|centre|center|middle|two|three|four|multiple|several|\d+ lanes?)[^.]{0,30}(closed|blocked)|(closed|blocked)[^.]{0,30}(left lane|centre lane|center lane|middle lane|multiple lanes)/.test(t);
+  if (left) return { v: "AFFECTED", why: "left or multiple lanes" };
+  var right = /(right|shoulder|exit|off.?ramp|on.?ramp|ramp|merge|turn lane|sidewalk)[^.]{0,30}(closed|blocked|maintenance|work)|(closed|blocked)[^.]{0,30}(right lane|shoulder|ramp)/.test(t);
+  if (right) return { v: "LIKELY_CLEAR", why: "right lane, shoulder or ramp only" };
+  if (/collision|crash|accident|vehicle|stall|debris|fire|spill|incident|obstruct/.test(t)) {
+    return { v: "UNKNOWN", why: "incident, lanes not stated" };
+  }
+  return { v: "UNKNOWN", why: "lanes not stated" };
+}
+
+var DIRWORD = { w: "westbound", e: "eastbound", n: "northbound", s: "southbound", both: "both directions" };
+function roadLabel(ev) {
+  var r = (ev.roads || [])[0] || {};
+  var bits = [r.name, DIRWORD[dirOf(r.direction)] || "", r.from && r.to ? r.from + " to " + r.to : (r.from || r.to || "")];
+  return bits.filter(Boolean).join(", ");
+}
+
+function clean(s) { return String(s || "").replace(/\s+/g, " ").replace(/\u2014|\u2013/g, ", ").trim(); }
+
+function analyze(events, now, route) {
+  route = route || ROUTES[0];
+  var items = [], skipped = 0;
+  (events || []).forEach(function (ev) {
+    var role = routeRole(ev, route);
+    if (!role) return;
+    if (!activeNow(ev, now)) { skipped++; return; }
+    var c = classify(ev, role);
+    items.push({ ev: ev, role: role, v: c.v, why: c.why });
+  });
+  items.sort(function (a, b) { return RANK[b.v] - RANK[a.v]; });
+  var overall = items.reduce(function (m, it) { return RANK[it.v] > RANK[m] ? it.v : m; }, "CLEAR");
+  return { route: route, items: items, overall: overall, skipped: skipped };
+}
+
+function analyzeAll(events, now) {
+  return { main: analyze(events, now, ROUTES[0]), alts: ROUTES.slice(1).map(function (r) { return analyze(events, now, r); }) };
+}
+
+function shortDesc(ev) {
+  var d = clean(ev.headline) || clean(ev.description) || clean(String(ev.event_type || "event").toLowerCase());
+  return d.length > 160 ? d.slice(0, 160) : d;
+}
+
+function speechFor(res, now) {
+  var loc = new Date(now + OFFSET_MS);
+  var h = loc.getUTCHours(), m = loc.getUTCMinutes();
+  var out = ["Route check at " + (h % 12 || 12) + " " + (m < 10 ? "oh " + m : m) + (h < 12 ? " A M." : " P M.")];
+  if (res.items.length === 0) {
+    out.push("No incidents or active construction are listed on your main route. This does not cover general slowdowns.");
+    return out;
+  }
+  var head = {
+    BLOCKED: "Warning. Part of your route is blocked.",
+    AFFECTED: "Your H O V lane is likely affected.",
+    UNKNOWN: "There are reports on your route, but lane details are not stated, so H O V impact is unknown.",
+    LIKELY_CLEAR: "There are reports on your route, but they look like they only touch the right lane, shoulder or ramps. H O V is likely clear.",
+    CLEAR: "Clear."
+  };
+  out.push(head[res.overall]);
+  res.items.slice(0, 5).forEach(function (it, i) {
+    out.push((i + 1) + ". " + clean(roadLabel(it.ev)) + ". " + shortDesc(it.ev) + ". " + LABEL[it.v].toLowerCase().replace("hov", "H O V") + ".");
+  });
+  if (res.items.length > 5) out.push((res.items.length - 5) + " more on screen.");
+  return out;
+}
+
+function altSpeech(alts) {
+  var out = ["Alternates."];
+  alts.forEach(function (a) {
+    var n = a.items.length;
+    if (n === 0) { out.push(a.route.speakName + ": nothing listed."); return; }
+    var first = a.items[0];
+    out.push(a.route.speakName + ": " + n + (n === 1 ? " report" : " reports") + ", worst is " + ALT_LABEL[a.overall] +
+      ". " + clean(roadLabel(first.ev)) + ". " + shortDesc(first.ev) + ".");
+  });
+  out.push("Alternates only help if the problem is on your main route.");
+  return out;
+}
+
+if (typeof module !== "undefined") {
+  module.exports = { ROUTES: ROUTES, routeRole: routeRole, classify: classify, activeNow: activeNow, analyze: analyze, analyzeAll: analyzeAll, speechFor: speechFor, altSpeech: altSpeech };
+}
+
+// ---------- Browser wiring ----------
+if (typeof document !== "undefined") {
+  var $ = function (id) { return document.getElementById(id); };
+  var lastSpeech = [];
+
+  function speak(lines) {
+    lastSpeech = lines;
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    lines.forEach(function (l) {
+      var u = new SpeechSynthesisUtterance(l);
+      u.lang = "en-CA";
+      u.rate = 1.0;
+      window.speechSynthesis.speak(u);
+    });
+  }
+
+  function fmtUpdated(ev) {
+    if (!ev.updated) return "";
+    try {
+      return ". Updated " + new Date(ev.updated).toLocaleString("en-CA", { timeZone: "Etc/GMT+7", hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return ""; }
+  }
+
+  function card(it, labels) {
+    var d = document.createElement("div");
+    d.className = "ev";
+    var b = document.createElement("b");
+    b.textContent = roadLabel(it.ev);
+    var tag = document.createElement("span");
+    tag.className = "tag " + CLASS[it.v];
+    tag.textContent = labels[it.v];
+    var p = document.createElement("div");
+    p.textContent = clean(it.ev.headline) + (it.ev.description ? " " + clean(it.ev.description) : "");
+    var w = document.createElement("div");
+    w.className = "small";
+    w.textContent = "Rule: " + it.why + fmtUpdated(it.ev);
+    d.appendChild(b); d.appendChild(tag); d.appendChild(p); d.appendChild(w);
+    return d;
+  }
+
+  function render(all, now) {
+    var res = all.main;
+    var v = $("verdict");
+    v.style.display = "block";
+    v.className = CLASS[res.overall];
+    v.textContent = res.items.length === 0 ? "NOTHING LISTED ON YOUR ROUTE" : LABEL[res.overall];
+    var out = $("out");
+    out.innerHTML = "";
+    res.items.forEach(function (it) { out.appendChild(card(it, LABEL)); });
+
+    var alts = $("alts");
+    alts.innerHTML = "";
+    var h = document.createElement("h2");
+    h.textContent = "Alternates";
+    alts.appendChild(h);
+    all.alts.forEach(function (a) {
+      var box = document.createElement("div");
+      box.className = "ev";
+      var b = document.createElement("b");
+      b.textContent = a.route.name;
+      var tag = document.createElement("span");
+      tag.className = "tag " + CLASS[a.overall];
+      tag.textContent = a.items.length === 0 ? "NOTHING LISTED" : a.items.length + " listed, " + ALT_LABEL[a.overall];
+      box.appendChild(b); box.appendChild(tag);
+      a.items.forEach(function (it) {
+        var p = document.createElement("div");
+        p.className = "small";
+        p.textContent = roadLabel(it.ev) + ": " + shortDesc(it.ev);
+        box.appendChild(p);
+      });
+      alts.appendChild(box);
+    });
+
+    var skipped = all.main.skipped;
+    $("meta").textContent = "Checked " + new Date(now + OFFSET_MS).toISOString().slice(11, 16) + " Pacific. " +
+      (skipped ? skipped + " scheduled item(s) not active right now were left out of the main route." : "");
+  }
+
+  function run() {
+    var now = Date.now();
+    $("go").textContent = "Checking...";
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, 12000);
+    fetch(API, { signal: ctl.signal, cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (data) {
+        clearTimeout(timer);
+        var all = analyzeAll(data.events || [], now);
+        render(all, now);
+        speak(speechFor(all.main, now).concat(altSpeech(all.alts)));
+      })
+      .catch(function (e) {
+        clearTimeout(timer);
+        $("verdict").style.display = "block";
+        $("verdict").className = "v-unknown";
+        $("verdict").textContent = "NO DATA";
+        $("out").innerHTML = "";
+        $("alts").innerHTML = "";
+        $("meta").textContent = "Error: " + e.message;
+        speak(["Could not reach DriveBC from this page. Do not rely on this check. Open DriveBC directly."]);
+      })
+      .then(function () { $("go").textContent = "Check my route"; });
+  }
+
+  $("go").addEventListener("click", run);
+  $("again").addEventListener("click", function () { if (lastSpeech.length) speak(lastSpeech); });
+  $("stop").addEventListener("click", function () { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); });
+}
+</script>
+</body>
+</html>
